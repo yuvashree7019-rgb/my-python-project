@@ -1,0 +1,155 @@
+import torch
+import torch.optim as optim
+import torchvision.transforms as transforms
+import torchvision.models as models
+from torchvision.models import VGG19_Weights
+from PIL import Image
+import matplotlib.pyplot as plt
+
+# -------------------------
+# Device configuration
+# -------------------------
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
+
+# -------------------------
+# Image size
+# -------------------------
+image_size = 512 if torch.cuda.is_available() else 256
+
+# -------------------------
+# Image loader with normalization
+# -------------------------
+loader = transforms.Compose([
+    transforms.Resize((image_size, image_size)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
+
+def load_image(image_path):
+    image = Image.open(image_path).convert("RGB")
+    image = loader(image).unsqueeze(0)
+    return image.to(device)
+
+content_img = load_image(r"C:\Users\ELCOT\Pictures\pythonpic.jpg")
+style_img = load_image(r"C:\Users\ELCOT\Pictures\pythonpic.jpg")
+
+# -------------------------
+# Display function (unnormalize)
+# -------------------------
+def imshow(tensor, title=None):
+    image = tensor.cpu().clone().squeeze(0)
+
+    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+
+    image = image * std + mean
+    image = torch.clamp(image, 0, 1)
+
+    image = transforms.ToPILImage()(image)
+    plt.imshow(image)
+    if title:
+        plt.title(title)
+    plt.axis("off")
+    plt.show()
+
+# -------------------------
+# Load VGG19 model
+# -------------------------
+vgg = models.vgg19(
+    weights=VGG19_Weights.IMAGENET1K_V1
+).features.to(device).eval()
+
+# -------------------------
+# Gram matrix
+# -------------------------
+def gram_matrix(tensor):
+    b, c, h, w = tensor.size()
+    features = tensor.reshape(c, h * w)
+    gram = torch.mm(features, features.t())
+    return gram / (c * h * w)
+
+# -------------------------
+# Layers for content and style
+# -------------------------
+content_layer = "21"
+style_layers = ["0", "5", "10", "19", "28"]
+
+# -------------------------
+# Feature extraction
+# -------------------------
+def get_features(image, model):
+    features = {}
+    x = image
+    for name, layer in model._modules.items():
+        x = layer(x)
+        if name == content_layer:
+            features["content"] = x
+        if name in style_layers:
+            features[name] = x
+    return features
+
+content_features = get_features(content_img, vgg)
+style_features = get_features(style_img, vgg)
+style_grams = {
+    layer: gram_matrix(style_features[layer])
+    for layer in style_layers
+}
+
+# -------------------------
+# Generated image
+# -------------------------
+generated = content_img.clone().requires_grad_(True).to(device)
+
+# -------------------------
+# Optimizer
+# -------------------------
+optimizer = optim.Adam([generated], lr=0.003)
+
+# -------------------------
+# Weights
+# -------------------------
+style_weight = 1e5
+content_weight = 1
+
+# -------------------------
+# Training loop (FIXED OUTPUT)
+# -------------------------
+steps = 800
+
+for step in range(steps):
+    gen_features = get_features(generated, vgg)
+
+    # Content loss
+    content_loss = torch.mean(
+        (gen_features["content"] - content_features["content"]) ** 2
+    )
+
+    # Style loss
+    style_loss = 0
+    for layer in style_layers:
+        gen_gram = gram_matrix(gen_features[layer])
+        style_gram = style_grams[layer]
+        style_loss += torch.mean((gen_gram - style_gram) ** 2)
+
+    total_loss = content_weight * content_loss + style_weight * style_loss
+
+    optimizer.zero_grad()
+    total_loss.backward()
+    optimizer.step()
+
+    # Print occasionally (IDLE safe)
+    if step % 200 == 0:
+        print(f"Step {step}/{steps} | Loss: {total_loss.item():.4f}")
+
+    # Show image occasionally
+    if step in [0, steps // 2, steps - 1]:
+        imshow(generated, f"Step {step}")
+
+# -------------------------
+# Final output
+# -------------------------
+imshow(generated, "Final Stylized Image")
