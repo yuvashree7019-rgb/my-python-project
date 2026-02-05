@@ -1,0 +1,56 @@
+
+from vosk import Model, KaldiRecognizer
+import wave
+import json
+import os
+
+# -------- PATHS --------
+model_path = r"D:\vosk-model\vosk-model-small-en-us-0.15"
+audio_path = r"D:\songs\audio.wav"
+
+# -------- CHECK FILES --------
+if not os.path.exists(model_path):
+    print("Vosk model not found!")
+    exit()
+
+if not os.path.exists(audio_path):
+    print("Audio file not found!")
+    exit()
+
+# -------- LOAD AUDIO --------
+wf = wave.open(audio_path, "rb")
+
+if wf.getnchannels() != 1:
+    print("Audio must be mono")
+    exit()
+
+if wf.getsampwidth() != 2:
+    print("Audio must be 16-bit")
+    exit()
+
+if wf.getframerate() != 16000:
+    print("Audio must be 16000 Hz")
+    exit()
+
+# -------- LOAD MODEL --------
+model = Model(model_path)
+rec = KaldiRecognizer(model, wf.getframerate())
+
+# -------- SPEECH TO TEXT --------
+result_text = ""
+
+while True:
+    data = wf.readframes(4000)
+    if len(data) == 0:
+        break
+    if rec.AcceptWaveform(data):
+        result = json.loads(rec.Result())
+        result_text += result.get("text", "") + " "
+
+# -------- FINAL RESULT --------
+final_result = json.loads(rec.FinalResult())
+result_text += final_result.get("text", "")
+
+print("Recognized Text:")
+print(result_text)
+spp
