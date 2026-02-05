@@ -1,0 +1,55 @@
+import nltk
+import re
+import numpy as np
+from nltk.corpus import stopwords
+from nltk.tokenize import sent_tokenize
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# ---------------------------
+# Preprocess text
+# ---------------------------
+def preprocess_text(text):
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[^a-zA-Z.]', ' ', text)
+    return text.lower()
+
+# ---------------------------
+# Summarization function
+# ---------------------------
+def summarize_text(text, num_sentences=3):
+    text = preprocess_text(text)
+
+    sentences = sent_tokenize(text)
+
+    if len(sentences) <= num_sentences:
+        return " ".join(sentences)
+
+    stop_words = stopwords.words('english')
+
+    vectorizer = TfidfVectorizer(stop_words=stop_words)
+    tfidf_matrix = vectorizer.fit_transform(sentences)
+
+    sentence_scores = np.sum(tfidf_matrix.toarray(), axis=1)
+
+    ranked_sentences = sorted(
+        ((score, sentence) for score, sentence in zip(sentence_scores, sentences)),
+        reverse=True
+    )
+
+    summary = [sentence for _, sentence in ranked_sentences[:num_sentences]]
+
+    return " ".join(summary)
+
+# ---------------------------
+# Example usage
+# ---------------------------
+article = """
+Artificial intelligence is a rapidly growing field of computer science.
+It focuses on creating machines capable of performing tasks that require human intelligence.
+AI is widely used in healthcare, education, finance, and transportation.
+Machine learning and deep learning are key subfields of artificial intelligence.
+Despite its benefits, AI also raises ethical and privacy concerns.
+"""
+
+print("SUMMARY:\n")
+print(summarize_text(article, num_sentences=2))
